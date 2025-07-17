@@ -1,4 +1,5 @@
 # Quack: DuckLake Local Deployment
+[![CI](https://github.com/MattOates/quack/actions/workflows/ci.yml/badge.svg)](https://github.com/MattOates/quack/actions/workflows/ci.yml)
 
 This repository provides a Docker Compose setup to run a local DuckLake lakehouse stack using PostgreSQL as the catalog database and MinIO as S3-compatible object storage. It leverages the DuckLake extensions for DuckDB to bootstrap or attach to an existing lakehouse automatically.
 

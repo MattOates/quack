@@ -1,0 +1,56 @@
+name: Docker Compose CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install Docker Compose (v2)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget
+          if ! command -v docker-compose &> /dev/null; then
+            sudo curl -L \
+              "https://github.com/docker/compose/releases/download/v2.21.2/docker-compose-$(uname -s)-$(uname -m)" \
+              -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+          fi
+
+      - name: Build & start services
+        run: docker-compose up -d --build
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 15); do
+            docker-compose exec -T postgres pg_isready -U ducklake && break
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+
+      - name: Wait for MinIO
+        run: |
+          for i in $(seq 1 15); do
+            curl -f http://localhost:9000/minio/health/live && break
+            echo "Waiting for MinIO..."
+            sleep 2
+          done
+
+      - name: Run DuckLake smoke-test
+        run: |
+          docker-compose exec -T ducklake-init duckdb -c "\
+            INSTALL ducklake; \
+            INSTALL postgres; \
+            ATTACH 'ducklake:postgres:dbname=ducklake_catalog host=postgres user=ducklake password=ducklake' AS the_ducklake (DATA_PATH 's3://ducklake/lake/'); \
+            USE the_ducklake; \
+            SELECT count(*) FROM ducklake.schema; \
+          "
+
+      - name: Tear down
+        if: always()
+        run: docker-compose down -v
