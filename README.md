@@ -60,8 +60,8 @@ flowchart TD
 1. **Clone the repo**
 
    ```bash
-   git clone https://github.com/your-org/ducklake-local.git
-   cd ducklake-local
+   git clone git@github.com:MattOates/quack.git
+   cd quack
    ```
 
 2. **Launch the stack**
