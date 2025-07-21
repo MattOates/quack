@@ -11,6 +11,7 @@
 # ///
 
 import os
+from string import Template
 import time
 
 import duckdb
@@ -19,6 +20,22 @@ from botocore.exceptions import ClientError
 from botocore.config import Config
 import psycopg
 import requests
+
+
+def dump_duckdbrc():
+    tpl = Template(open("/duckdbrc.tpl").read())
+    content = tpl.substitute(
+        AWS_ACCESS_KEY_ID=os.environ["AWS_ACCESS_KEY_ID"],
+        AWS_SECRET_ACCESS_KEY=os.environ["AWS_SECRET_ACCESS_KEY"],
+        AWS_REGION=os.environ.get("AWS_REGION", "us-east-1"),
+        POSTGRES_DB=os.environ["POSTGRES_DB"],
+        POSTGRES_USER=os.environ["POSTGRES_USER"],
+        POSTGRES_PASSWORD=os.environ["POSTGRES_PASSWORD"],
+        BUCKET=os.environ["BUCKET"],
+    )
+    with open("/root/.duckdbrc", "w") as f:
+        f.write(content)
+
 
 def wait_for_postgres(host="postgres", user=None, password=None, db=None, timeout=60):
     deadline = time.time() + timeout
@@ -56,7 +73,11 @@ def main():
     aws_ep     = os.environ["AWS_ENDPOINT_URL"]
     bucket     = os.environ["BUCKET"]
 
-    # Wait for dependencies
+    # 1) Render ~/.duckdbrc so both CLI and Python API sessions will
+    #    pick up the HTTPFS settings + auto-ATTACH.
+    dump_duckdbrc()
+
+    # 2) Wait on Postgres & MinIO, ensure bucket, then bootstrap/attach via Python API…
     wait_for_postgres(user=pg_user, password=pg_pass, db=pg_db)
     wait_for_minio(aws_ep)
 
@@ -76,9 +97,23 @@ def main():
 
     # Initialize or attach DuckLake
     con = duckdb.connect()
+
+    # 1) install extensions
     con.execute("INSTALL ducklake;")
     con.execute("INSTALL postgres;")
 
+    # 2) configure HTTPFS for MinIO
+    for key, val in {
+        "s3_url_style":    "path",
+        "s3_endpoint":     "minio:9000",
+        "s3_access_key_id":     os.environ["AWS_ACCESS_KEY_ID"],
+        "s3_secret_access_key": os.environ["AWS_SECRET_ACCESS_KEY"],
+        "s3_region":            os.environ.get("AWS_REGION", "us-east-1"),
+        "s3_use_ssl":           "false",
+    }.items():
+        con.execute(f"SET {key}='{val}';")
+
+    # 3) now attach/initialize DuckLake
     attach_sql = f"""
     ATTACH 'ducklake:postgres:dbname={pg_db} host=postgres user={pg_user} password={pg_pass}'
     AS the_ducklake (DATA_PATH 's3://{bucket}/lake/');
@@ -86,7 +121,7 @@ def main():
     con.execute(attach_sql)
     con.execute("USE the_ducklake;")
 
-    # Keep the container alive
+    # 4)Keep the container alive
     print("DuckLake init complete; container is now running.")
     while True:
         time.sleep(3600)

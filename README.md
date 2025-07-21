@@ -79,13 +79,60 @@ flowchart TD
 
 4. **Verify the lakehouse**
 
+Once you have a client up via 3 all setup should be automatic from the Docker container. Doing something like the following should get you some gene data loaded into your lake.
+
    ```sql
-   INSTALL ducklake;
-   INSTALL postgres;
-   ATTACH 'ducklake:postgres:dbname=ducklake_catalog host=postgres user=ducklake password=ducklake' AS the_ducklake (DATA_PATH 's3://ducklake/lake/');
-   USE the_ducklake;
-   SELECT * FROM ducklake.schema;
+   CREATE OR REPLACE TABLE gene AS
+    SELECT *
+    FROM read_csv_auto(
+    'https://storage.googleapis.com/public-download-files/hgnc/tsv/tsv/non_alt_loci_set.txt',
+    HEADER      => TRUE,
+    DELIM       => '\t',
+    SAMPLE_SIZE => 100000
+   );
    ```
+
+Then `select * from gene limit 10;`
+```
+┌────────────┬─────────┬──────────────────────┬───┬──────────────────────┬───────────┐
+│  hgnc_id   │ symbol  │         name         │ … │     mane_select      │   gencc   │
+│  varchar   │ varchar │       varchar        │   │       varchar        │  varchar  │
+├────────────┼─────────┼──────────────────────┼───┼──────────────────────┼───────────┤
+│ HGNC:2973  │ DNM1L   │ dynamin 1 like       │ … │ ENST00000549701.6|…  │ HGNC:2973 │
+│ HGNC:21122 │ DNM1P5  │ dynamin 1 pseudoge…  │ … │ NULL                 │ NULL      │
+│ HGNC:21126 │ DNM1P9  │ dynamin 1 pseudoge…  │ … │ NULL                 │ NULL      │
+│ HGNC:21134 │ DNM1P17 │ dynamin 1 pseudoge…  │ … │ NULL                 │ NULL      │
+│ HGNC:21135 │ DNM1P18 │ dynamin 1 pseudoge…  │ … │ NULL                 │ NULL      │
+│ HGNC:21136 │ DNM1P19 │ dynamin 1 pseudoge…  │ … │ NULL                 │ NULL      │
+│ HGNC:35171 │ DNM1P24 │ dynamin 1 pseudoge…  │ … │ NULL                 │ NULL      │
+│ HGNC:35172 │ DNM1P25 │ dynamin 1 pseudoge…  │ … │ NULL                 │ NULL      │
+│ HGNC:35173 │ DNM1P26 │ dynamin 1 pseudoge…  │ … │ NULL                 │ NULL      │
+│ HGNC:35174 │ DNM1P27 │ dynamin 1 pseudoge…  │ … │ NULL                 │ NULL      │
+├────────────┴─────────┴──────────────────────┴───┴──────────────────────┴───────────┤
+│ 10 rows                                                       54 columns (5 shown) │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+With the above you should see some data landing in ./data of the repository in both minio and pgdata.
+
+You should already be dropped straight into a configured DuckLake using mino and pg against your local disk. But if you want to attach from the 
+outside rather than from the container helper you will need to do the following in your duckdb client/.duckdbrc:
+
+```sql
+INSTALL ducklake;
+INSTALL postgres;
+   
+SET s3_url_style           = 'path';
+SET s3_endpoint            = 'minio:9000';
+SET s3_access_key_id       = 'minioadmin';
+SET s3_secret_access_key   = 'minioadmin';
+SET s3_region              = 'us-east-1';
+SET s3_use_ssl             = false;
+
+-- Auto-attach your lakehouse
+ATTACH 'ducklake:postgres:dbname=ducklake_catalog host=postgres user=ducklake password=ducklake'
+AS the_ducklake  (DATA_PATH 's3://ducklake/lake/');
+```
 
 ## Configuration
 

@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: ducklake
       POSTGRES_DB: ducklake_catalog
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - ./data/pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ducklake"]
       interval: 5s
@@ -24,7 +24,7 @@ services:
     ports:
       - "9000:9000"
     volumes:
-      - miniodata:/data
+      - ./data/minio:/data
     healthcheck:
       test: ["CMD", "curl", "-I", "http://localhost:9000/minio/health/live"]
       interval: 5s
