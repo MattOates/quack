@@ -18,7 +18,7 @@ jobs:
           
           # Verify that data was actually loaded by checking row count
           echo "Verifying demo data was loaded..."
-          row_count=$(docker compose exec -T ducklake-init duckdb -c "SELECT COUNT(*) FROM the_ducklake.gene;" | tail -n 2 | head -n 1 | \grep -Eo '\d+')
+          row_count=$(docker compose exec -T ducklake-init duckdb -c "SELECT COUNT(*) FROM the_ducklake.gene;" | tail -n 2 | head -n 1 | grep -Po '\d+')
           echo "Found $row_count rows in gene table"
           
           # Ensure we have a reasonable number of rows (gene data should have thousands)
