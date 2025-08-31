@@ -99,8 +99,8 @@ def main():
     con = duckdb.connect()
 
     # 1) install extensions
-    con.execute("INSTALL ducklake;")
-    con.execute("INSTALL postgres;")
+    con.install_extension("ducklake")
+    con.install_extension("postgres")  
 
     # 2) configure HTTPFS for MinIO
     for key, val in {
