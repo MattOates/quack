@@ -319,6 +319,225 @@ USE my_lakehouse;
 SHOW TABLES;
 ```
 
+## 🐍 Python Connection Example
+
+You can also connect to `the_ducklake` from your own Python applications. Here's a complete example:
+
+### Installation
+
+```bash
+uv add --prerelease=allow duckdb boto3 psycopg2-binary
+```
+
+or
+
+```bash
+pip install --pre duckdb boto3 psycopg2-binary
+```
+
+### Python Code
+
+```python
+#!/usr/bin/env -S uv run --script --prerelease=allow
+#
+# /// script
+# requires-python = ">=3.13.5"
+# dependencies = [
+#   "boto3",
+#   "psycopg",
+#   "duckdb",
+# ]
+# ///
+import duckdb
+import os
+
+def connect_to_ducklake():
+    """Connect to the DuckLake lakehouse from Python."""
+    
+    # Create DuckDB connection
+    con = duckdb.connect()
+    
+    # Install required extensions
+    con.execute("INSTALL ducklake;")
+    con.execute("INSTALL postgres;") 
+    con.execute("INSTALL httpfs;")
+    
+    # Configure S3/MinIO settings
+    s3_config = {
+        "s3_url_style": "path",
+        "s3_endpoint": "localhost:9000",  # External connection
+        "s3_access_key_id": "minioadmin",
+        "s3_secret_access_key": "minioadmin", 
+        "s3_region": "us-east-1",
+        "s3_use_ssl": "false"
+    }
+    
+    for key, value in s3_config.items():
+        con.execute(f"SET {key}='{value}';")
+    
+    # Attach to DuckLake
+    attach_sql = """
+    ATTACH 'ducklake:postgres:dbname=ducklake_catalog host=localhost user=ducklake password=ducklake'
+    AS the_ducklake (DATA_PATH 's3://ducklake/lake/');
+    """
+    con.execute(attach_sql)
+    con.execute("USE the_ducklake;")
+    
+    return con
+
+def main():
+    """Example usage of DuckLake connection."""
+    
+    # Make sure your quack stack is running first!
+    # cd /path/to/quack && make up
+    
+    con = connect_to_ducklake()
+    
+    # Example 1: List available tables
+    tables = con.execute("SHOW TABLES;").fetchall()
+    print("Available tables:", tables)
+    
+    # Example 2: Create a sample table
+    con.execute("""
+        CREATE OR REPLACE TABLE python_example AS
+        SELECT 
+            'hello' as greeting,
+            'world' as target,
+            42 as meaning_of_life,
+            current_timestamp as created_at
+    """)
+    
+    # Example 3: Query the data
+    result = con.execute("SELECT * FROM python_example;").fetchall()
+    print("Sample data:", result)
+    
+    # Example 4: Load data from a CSV
+    con.execute("""
+        CREATE OR REPLACE TABLE sample_data AS
+        SELECT 
+            row_number() OVER () as id,
+            'user_' || row_number() OVER () as username,
+            random() * 100 as score
+        FROM generate_series(1, 1000)
+    """)
+    
+    # Example 5: Analytical query
+    stats = con.execute("""
+        SELECT 
+            COUNT(*) as total_records,
+            AVG(score) as avg_score,
+            MIN(score) as min_score,
+            MAX(score) as max_score
+        FROM sample_data
+    """).fetchone()
+    
+    print(f"Dataset stats: {stats}")
+    
+    # Example 6: Work with time series data
+    con.execute("""
+        CREATE OR REPLACE TABLE time_series AS
+        SELECT 
+            (current_date - INTERVAL (row_number() OVER ()) DAY) as date,
+            random() * 1000 as value
+        FROM generate_series(1, 365)
+    """)
+    
+    monthly_summary = con.execute("""
+        SELECT 
+            date_trunc('month', date) as month,
+            COUNT(*) as records,
+            AVG(value) as avg_value,
+            SUM(value) as total_value
+        FROM time_series
+        GROUP BY date_trunc('month', date)
+        ORDER BY month
+    """).fetchall()
+    
+    print("Monthly summary:", monthly_summary[:3])  # Show first 3 months
+    
+    # Don't forget to close the connection
+    con.close()
+    print("✅ DuckLake connection example completed!")
+
+if __name__ == "__main__":
+    main()
+```
+
+### Advanced Usage
+
+For production applications, consider using connection pooling and environment variables:
+
+```python
+import os
+from contextlib import contextmanager
+
+@contextmanager
+def ducklake_connection():
+    """Context manager for DuckLake connections."""
+    con = None
+    try:
+        con = duckdb.connect()
+        
+        # Install extensions
+        for ext in ["ducklake", "postgres", "httpfs"]:
+            con.execute(f"INSTALL {ext};")
+        
+        # Configure from environment
+        s3_config = {
+            "s3_url_style": "path",
+            "s3_endpoint": os.getenv("DUCKLAKE_S3_ENDPOINT", "localhost:9000"),
+            "s3_access_key_id": os.getenv("DUCKLAKE_S3_ACCESS_KEY", "minioadmin"),
+            "s3_secret_access_key": os.getenv("DUCKLAKE_S3_SECRET_KEY", "minioadmin"),
+            "s3_region": os.getenv("DUCKLAKE_S3_REGION", "us-east-1"),
+            "s3_use_ssl": "false"
+        }
+        
+        for key, value in s3_config.items():
+            con.execute(f"SET {key}='{value}';")
+        
+        # Connection details from environment
+        pg_host = os.getenv("DUCKLAKE_PG_HOST", "localhost")
+        pg_user = os.getenv("DUCKLAKE_PG_USER", "ducklake")
+        pg_pass = os.getenv("DUCKLAKE_PG_PASSWORD", "ducklake") 
+        pg_db = os.getenv("DUCKLAKE_PG_DB", "ducklake_catalog")
+        bucket = os.getenv("DUCKLAKE_BUCKET", "ducklake")
+        
+        attach_sql = f"""
+        ATTACH 'ducklake:postgres:dbname={pg_db} host={pg_host} user={pg_user} password={pg_pass}'
+        AS the_ducklake (DATA_PATH 's3://{bucket}/lake/');
+        """
+        con.execute(attach_sql)
+        con.execute("USE the_ducklake;")
+        
+        yield con
+        
+    finally:
+        if con:
+            con.close()
+
+# Usage with context manager
+def analyze_data():
+    with ducklake_connection() as con:
+        # Your analysis code here
+        result = con.execute("SELECT COUNT(*) FROM your_table;").fetchone()
+        return result
+```
+
+### Environment Variables
+
+For the advanced example, you can set these environment variables:
+
+```bash
+export DUCKLAKE_S3_ENDPOINT="localhost:9000"
+export DUCKLAKE_S3_ACCESS_KEY="minioadmin"  
+export DUCKLAKE_S3_SECRET_KEY="minioadmin"
+export DUCKLAKE_PG_HOST="localhost"
+export DUCKLAKE_PG_USER="ducklake"
+export DUCKLAKE_PG_PASSWORD="ducklake"
+export DUCKLAKE_PG_DB="ducklake_catalog"
+export DUCKLAKE_BUCKET="ducklake"
+```
+
 ## 🐛 Troubleshooting
 
 ### Services Won't Start
