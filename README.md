@@ -358,9 +358,9 @@ def connect_to_ducklake():
     con = duckdb.connect()
     
     # Install required extensions
-    con.execute("INSTALL ducklake;")
-    con.execute("INSTALL postgres;") 
-    con.execute("INSTALL httpfs;")
+    con.install_extension("ducklake")
+    con.install_extension("postgres")   
+    con.install_extension("httpfs")
     
     # Configure S3/MinIO settings
     s3_config = {
