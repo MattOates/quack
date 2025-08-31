@@ -9,48 +9,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install Docker Compose (v2)
+      - name: Run demo and verify data
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wget
-          if ! command -v docker-compose &> /dev/null; then
-            sudo curl -L \
-              "https://github.com/docker/compose/releases/download/v2.21.2/docker-compose-$(uname -s)-$(uname -m)" \
-              -o /usr/local/bin/docker-compose
-            sudo chmod +x /usr/local/bin/docker-compose
+          # Run the demo which builds, starts services, and loads sample data
+          make demo
+          
+          # Verify that data was actually loaded by checking row count
+          echo "Verifying demo data was loaded..."
+          row_count=$(docker compose exec -T ducklake-init duckdb -c "SELECT COUNT(*) FROM the_ducklake.gene;" | tail -n 1 | tr -d ' ')
+          echo "Found $row_count rows in gene table"
+          
+          # Ensure we have a reasonable number of rows (gene data should have thousands)
+          if [ "$row_count" -gt 1000 ]; then
+            echo "✅ Demo successful: $row_count rows loaded"
+          else
+            echo "❌ Demo failed: only $row_count rows found (expected > 1000)"
+            exit 1
           fi
 
-      - name: Build & start services
-        run: docker-compose up -d --build
-
-      - name: Wait for PostgreSQL
+      - name: Test basic DuckLake functionality
         run: |
-          for i in $(seq 1 15); do
-            docker-compose exec -T postgres pg_isready -U ducklake && break
-            echo "Waiting for PostgreSQL..."
-            sleep 2
-          done
-
-      - name: Wait for MinIO
-        run: |
-          for i in $(seq 1 15); do
-            curl -f http://localhost:9000/minio/health/live && break
-            echo "Waiting for MinIO..."
-            sleep 2
-          done
-
-      - name: Run DuckLake smoke-test
-        run: |
-          docker-compose exec -T ducklake-init duckdb -c "\
-            INSTALL ducklake; \
-            INSTALL postgres; \
-            ATTACH 'ducklake:postgres:dbname=ducklake_catalog host=postgres user=ducklake password=ducklake' AS the_ducklake (DATA_PATH 's3://ducklake/lake/'); \
-            USE the_ducklake; \
-            SELECT count(*) FROM ducklake.schema; \
+          # Test connection and basic queries
+          make test-connection
+          
+          # Run additional smoke tests
+          echo "Running additional smoke tests..."
+          docker compose exec -T ducklake-init duckdb -c "
+            -- Test table exists and has data
+            SELECT 'gene table exists' as test, COUNT(*) > 0 as result FROM the_ducklake.gene;
+            
+            -- Test we can query specific columns
+            SELECT 'column access test' as test, COUNT(DISTINCT symbol) > 100 as result 
+            FROM the_ducklake.gene 
+            WHERE symbol IS NOT NULL;
+            
+            -- Test basic aggregation works
+            SELECT 'aggregation test' as test, COUNT(*) as total_rows, COUNT(DISTINCT symbol) as unique_symbols
+            FROM the_ducklake.gene;
           "
 
-      - name: Tear down
+      - name: Clean up
         if: always()
-        run: docker-compose down -v
+        run: make down
