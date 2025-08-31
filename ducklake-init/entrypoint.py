@@ -1,4 +1,4 @@
-#!/usr/bin/env -S uv run --script
+#!/usr/bin/env -S uv run --script --prerelease=allow
 #
 # /// script
 # requires-python = ">=3.13.5"
