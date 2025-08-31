@@ -16,7 +16,7 @@ help: ## Show this help message
 .PHONY: build
 build: ## Build all Docker images
 	@echo "Building DuckLake Docker images..."
-	$(DOCKER_COMPOSE) build --no-cache
+	$(DOCKER_COMPOSE) build --no-cache --progress=plain
 
 .PHONY: build-quick
 build-quick: ## Build Docker images using cache
