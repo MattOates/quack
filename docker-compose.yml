@@ -17,7 +17,6 @@ services:
 
   minio:
     image: minio/minio:latest
-    platform: linux/arm64/v8
     container_name: ducklake-minio
     ports:
       - "9000:9000"
